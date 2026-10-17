@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>审核台 · My Confession</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%23207cca'/%3E%3Ctext x='50' y='70' font-size='56' text-anchor='middle' fill='%23ffffff' font-family='Georgia,serif'%3EA%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .admin-wrap { max-width: 900px; margin: 0 auto; padding: 30px 20px 60px; }
+        .admin-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+        .admin-head h1 { font-size: 24px; color: #2c3e50; }
+        .admin-note { color: #7f8c8d; font-size: 14px; margin-bottom: 22px; }
+        .admin-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 24px; }
+        .admin-bar input { flex: 1 1 320px; padding: 10px 12px; border: 1px solid #dfe4ea; border-radius: 6px; font-size: 14px; font-family: inherit; }
+        .admin-bar button, .tbl button { padding: 9px 16px; border: none; border-radius: 6px; background: #3498db; color: #fff; font-size: 14px; cursor: pointer; }
+        .admin-bar button:hover { background: #2980b9; }
+        .admin-bar button.ghost { background: #2c3e50; }
+        .admin-bar button.ghost:hover { background: #1a252f; }
+        .stat { display: flex; gap: 24px; margin-bottom: 26px; flex-wrap: wrap; }
+        .stat div { background: #f8f9fa; border-left: 3px solid #3498db; border-radius: 6px; padding: 12px 18px; font-size: 14px; color: #555; }
+        .stat b { color: #2c3e50; font-size: 20px; margin-right: 6px; }
+        h2.sec { font-size: 18px; color: #2c3e50; margin: 30px 0 12px; padding-left: 12px; border-left: 4px solid #3498db; }
+        .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .tbl th, .tbl td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+        .tbl th { color: #7f8c8d; font-weight: normal; font-size: 13px; }
+        .tbl td.note { color: #555; max-width: 380px; }
+        .tbl tr.deleted td { opacity: .55; }
+        .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+        .tag.on { background: #e8f6ee; color: #27ae60; }
+        .tag.off { background: #fdeaea; color: #c0392b; }
+        .tbl button { padding: 4px 10px; font-size: 12px; margin-right: 6px; }
+        .tbl button.warn { background: #c0392b; }
+        .tbl button.warn:hover { background: #962d22; }
+        .hide { display: none !important; }
+        .msg-line { color: #777; font-size: 14px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="admin-wrap">
+    <div class="admin-head">
+        <h1><i class="fas fa-shield-halved" style="color:#3498db"></i> 审核台</h1>
+        <a href="index.html" style="margin-left:auto;color:#3498db;text-decoration:none;font-size:14px">← 回到站点</a>
+    </div>
+    <p class="admin-note">
+        访客可以自由添加和删除人物、自由留言。这里能看到<strong>被软删除的条目</strong>并恢复，也能彻底清除。
+        口令存在 <code>config.json</code> 的 <code>adminToken</code>，启动服务时也会打印在控制台。
+    </p>
+
+    <div class="admin-bar">
+        <input type="password" id="token" placeholder="粘贴管理口令（adminToken）" autocomplete="off">
+        <button id="btn-load">载入</button>
+        <button id="btn-snapshot" class="ghost" title="把已发布人物导出成 data/people.json">导出静态快照</button>
+        <button id="btn-forget" class="ghost">清除本机口令</button>
+    </div>
+    <div class="msg-line" id="status"></div>
+
+    <div id="panel" class="hide">
+        <div class="stat">
+            <div><b id="s-people">0</b>人物（在线）</div>
+            <div><b id="s-people-all">0</b>人物（含已删）</div>
+            <div><b id="s-msg">0</b>留言（在线）</div>
+        </div>
+
+        <h2 class="sec">人物册</h2>
+        <div class="tbl-wrap">
+            <table class="tbl">
+            <thead><tr><th>ID</th><th>分类</th><th>名字</th><th>描述</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="tb-people"></tbody>
+        </table>
+        </div>
+
+        <h2 class="sec">留言板</h2>
+        <div class="tbl-wrap">
+            <table class="tbl">
+            <thead><tr><th>ID</th><th>署名</th><th>内容</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="tb-msg"></tbody>
+        </table>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+    var $ = function (id) { return document.getElementById(id); };
+    var token = localStorage.getItem('mf_admin_token') || '';
+    $('token').value = token;
+
+    function esc(t) { return String(t == null ? '' : t); }
+
+    function setStatus(txt, cls) {
+        $('status').textContent = txt || '';
+        $('status').style.color = cls === 'err' ? '#c0392b' : (cls === 'ok' ? '#27ae60' : '#777');
+    }
+
+    function api(path, opt) {
+        opt = opt || {};
+        opt.headers = Object.assign({ 'x-admin-token': token }, opt.headers || {});
+        return fetch(path, opt).then(function (r) {
+            return r.json().then(function (j) { return { status: r.status, body: j }; });
+        });
+    }
+
+    function cell(tr, text, cls) {
+        var td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.textContent = esc(text);
+        tr.appendChild(td);
+        return td;
+    }
+
+    function tag(status) {
+        var s = document.createElement('span');
+        s.className = 'tag ' + (status === 'published' ? 'on' : 'off');
+        s.textContent = status === 'published' ? '在线' : '已删除';
+        return s;
+    }
+
+    function btn(label, cls, fn) {
+        var b = document.createElement('button');
+        if (cls) b.className = cls;
+        b.textContent = label;
+        b.addEventListener('click', fn);
+        return b;
+    }
+
+    function renderPeople(list) {
+        var tb = $('tb-people');
+        tb.textContent = '';
+        list.forEach(function (p) {
+            var tr = document.createElement('tr');
+            if (p.status !== 'published') tr.className = 'deleted';
+            cell(tr, p.id);
+            cell(tr, p.category);
+            cell(tr, p.name);
+            cell(tr, p.note, 'note');
+            var td = document.createElement('td');
+            td.appendChild(tag(p.status));
+            tr.appendChild(td);
+
+            var ops = document.createElement('td');
+            if (p.status !== 'published') {
+                ops.appendChild(btn('恢复', '', function () {
+                    api('/api/admin/restore', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: p.id })
+                    }).then(load);
+                }));
+            }
+            ops.appendChild(btn('彻底删除', 'warn', function () {
+                if (!confirm('彻底删除「' + p.name + '」？这一步不可恢复。')) return;
+                api('/api/admin/purge', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: p.id, type: 'person' })
+                }).then(load);
+            }));
+            tr.appendChild(ops);
+            tb.appendChild(tr);
+        });
+    }
+
+    function renderMsgs(list) {
+        var tb = $('tb-msg');
+        tb.textContent = '';
+        list.forEach(function (m) {
+            var tr = document.createElement('tr');
+            if (m.status !== 'published') tr.className = 'deleted';
+            cell(tr, m.id);
+            cell(tr, m.name);
+            cell(tr, m.text, 'note');
+            var td = document.createElement('td');
+            td.appendChild(tag(m.status));
+            tr.appendChild(td);
+
+            var ops = document.createElement('td');
+            if (m.status === 'published') {
+                ops.appendChild(btn('隐藏', '', function () {
+                    api('/api/admin/message-delete', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: m.id })
+                    }).then(load);
+                }));
+            }
+            ops.appendChild(btn('彻底删除', 'warn', function () {
+                if (!confirm('彻底删除这条留言？')) return;
+                api('/api/admin/purge', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: m.id, type: 'message' })
+                }).then(load);
+            }));
+            tr.appendChild(ops);
+            tb.appendChild(tr);
+        });
+    }
+
+    function load() {
+        if (!token) { setStatus('请先粘贴管理口令再点「载入」', 'err'); return; }
+        api('/api/admin/all').then(function (r) {
+            if (r.status === 401) { setStatus('口令不正确', 'err'); return; }
+            if (!r.body || !r.body.ok) { setStatus('载入失败', 'err'); return; }
+            localStorage.setItem('mf_admin_token', token);
+            $('panel').classList.remove('hide');
+            $('s-people').textContent = r.body.stats.people;
+            $('s-people-all').textContent = r.body.people.length;
+            $('s-msg').textContent = r.body.stats.messages;
+            renderPeople(r.body.people);
+            renderMsgs(r.body.messages);
+            setStatus('已载入', 'ok');
+        }).catch(function () {
+            setStatus('连不上服务 —— 先运行 node server.js', 'err');
+        });
+    }
+
+    $('btn-load').addEventListener('click', function () {
+        token = $('token').value.trim();
+        load();
+    });
+    $('token').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') { $('btn-load').click(); }
+    });
+    $('btn-forget').addEventListener('click', function () {
+        localStorage.removeItem('mf_admin_token');
+        $('token').value = '';
+        $('panel').classList.add('hide');
+        setStatus('已清除本机保存的口令');
+    });
+    $('btn-snapshot').addEventListener('click', function () {
+        if (!token) { setStatus('先载入口令', 'err'); return; }
+        api('/api/admin/snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+            .then(function (r) {
+                if (r.body && r.body.ok) setStatus('已导出 ' + r.body.count + ' 条 -> ' + r.body.path, 'ok');
+                else setStatus('导出失败', 'err');
+            });
+    });
+
+    if (token) { load(); }
+})();
+</script>
+</body>
+</html>

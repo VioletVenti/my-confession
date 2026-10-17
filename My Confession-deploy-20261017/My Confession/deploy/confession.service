@@ -1,0 +1,54 @@
+# My Confession —— Linux systemd 服务单元
+#
+# 部署步骤：
+#   1) 把整个站点目录放到 /opt/confession
+#        sudo mkdir -p /opt/confession
+#        sudo cp -r ./My\ Confession/. /opt/confession/
+#        sudo chown -R www-data:www-data /opt/confession
+#        chmod +x /opt/confession/start.sh
+#   2) 安装本文件
+#        sudo cp confession.service /etc/systemd/system/
+#        sudo systemctl daemon-reload
+#        sudo systemctl enable --now confession
+#   3) 看状态 / 看日志
+#        sudo systemctl status confession
+#        sudo journalctl -u confession -f
+#
+# 注意：User 必须是那个对 /opt/confession/data 有写权限的账号
+#       （SQLite 要在里面建库和写 WAL）。
+
+[Unit]
+Description=My Confession (静态书 + 人物册 + 留言板)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/confession
+ExecStart=/usr/bin/node /opt/confession/server.js
+Environment=PORT=8080
+Environment=HOST=127.0.0.1
+User=www-data
+Group=www-data
+
+# 崩溃自动重启
+Restart=always
+RestartSec=3
+
+# 只让反向代理能访问（配合 Caddy/Nginx）
+# 如果要直接对外开端口，把上面 HOST 改成 0.0.0.0
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=confession
+
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/confession/data
+
+[Install]
+WantedBy=multi-user.target
