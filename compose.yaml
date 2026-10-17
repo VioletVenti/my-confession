@@ -1,0 +1,15 @@
+services:
+  my-confession:
+    build: .
+    container_name: my-confession
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - confession_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  confession_data:
