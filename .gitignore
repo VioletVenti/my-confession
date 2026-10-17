@@ -1,4 +1,4 @@
-# ---- 运行时生成 / 私密 ----
+﻿# ---- 运行时生成 / 私密 ----
 config.json
 data/*.db
 data/*.db-shm
@@ -11,10 +11,7 @@ data/backup/
 历史记录/
 班规/
 *.zip
-*.m4a
-*.mp3
 *.docx
-Screenshot_*.jpg
 
 # ---- 备份与旧版 ----
 *.bak
