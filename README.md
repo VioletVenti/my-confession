@@ -39,6 +39,7 @@ docker compose up -d --build
 
 - [开发指南](docs/DEVELOPMENT.md)：项目结构、内容修改、前后端职责和本地检查
 - [部署指南](docs/DEPLOYMENT.md)：本机、局域网、Docker/NAS、备份和公开访问
+- [服务器更新记录](docs/releases/UPDATE-20261018.md)：2026-10-18 的一次性上线步骤
 - [旧部署文档入口](DEPLOY.md)：保留的兼容链接
 
 ## 数据与安全

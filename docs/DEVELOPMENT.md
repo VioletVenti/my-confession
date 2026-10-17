@@ -19,27 +19,64 @@ node --check backup.js
 ## 目录与职责
 
 ```text
-*.html             页面和内容，位于仓库根目录
-css/style.css      全站样式与响应式布局
-js/app.js          页面搜索和标签筛选
-js/search-data.js  静态搜索索引
-js/people.js       人物册和留言板的 API 客户端
-server.js          静态文件服务、API、管理接口和 SQLite 初始化
-admin.html         管理审核页面
-backup.js          SQLite 一致性备份
-data/app.db        运行时数据库（自动生成，不提交）
-config.json        管理口令等运行配置（自动生成，不提交）
+*.html                 页面和内容，暂留在仓库根目录以保持 URL
+css/style.css          全站样式与响应式布局
+js/app.js              页面搜索和标签筛选
+js/search-data.js      静态搜索索引
+js/people.js           人物册和留言板的 API 客户端
+server.js              静态文件服务、API、管理接口和 SQLite 初始化
+admin.html             管理审核页面
+backup.js              SQLite 一致性备份
+docs/                  开发和部署指南
+docs/releases/         按版本归档的一次性更新说明
+deploy/confession.service  Linux systemd 单元示例
+README-DEPLOY.txt      交接部署包附带的纯文本说明
+UPDATE-20261018.md     根目录兼容指针，正文已归档到 docs/releases/
+source-text.txt        站点原始素材，不由运行时代码读取
+*.m4a, Screenshot_*.jpg  首页引用的班会录音和图片
+data/app.db            运行时数据库（自动生成，不提交）
+config.json            管理口令等运行配置（自动生成，不提交）
 ```
 
-页面之间用相对路径互相链接，并从根路径引用 `css/` 和 `js/`。保持现有 URL 和目录位置可以避免破坏站内链接、书签和直接以 `file://` 打开的静态浏览方式。
+### 为什么页面仍在根目录
+
+页面之间用相对路径互相链接，服务按请求路径直接从项目根目录查找文件，页面也能通过 `file://` 独立打开。把页面或站点资源搬进新目录会同时改变站内链接、书签和旧 URL。为了让日常编辑简单可靠，页面、`css/`、`js/` 和首页正在引用的录音/图片先保持原路径；维护文档统一放在 `docs/`。
 
 ## 修改页面和内容
 
 班规、往事、轶闻和《岁月史书》的正文保存在对应 HTML 页面里，直接编辑页面即可。修改标题、描述或正文后，在浏览器刷新查看；无需编译。
 
+新增一条内容时，先选对应栏目页面，在相邻条目附近复制现有 HTML 结构；检查该页的目录和页间链接，并确认搜索索引是否需要加入新内容。新增页面时，沿用同栏目页面的 `<head>`、样式引用和页脚链接，再把新文件加入入口链接。保持文件名和大小写在链接中一致。
+
 搜索索引位于 `js/search-data.js`。如果加入了新的可搜索内容，要同步维护该索引；搜索需要兼容直接打开 HTML 的方式，因此不要把索引加载改成依赖 `fetch` 的外部文件。
 
+首页的录音和图片用根目录相对路径引用。替换这些素材时沿用当前文件名，或同步修改 `index.html` 中对应的 `src`，并确认新文件确实进入 Git。
+
 人物册和留言板是动态功能：前端交互在 `js/people.js`，服务端校验、管理权限和数据持久化在 `server.js`。服务端使用 Node 内置 `node:http` 和 `node:sqlite`，数据库文件在 `data/app.db`。新增或调整数据字段时，同时检查 API 输入校验、管理页面展示以及现有数据库的兼容性。
+
+常用 API：
+
+| 路由 | 用途 |
+|---|---|
+| `GET/POST /api/people` | 读取或提交人物词条；开启词条审核后，新词条进入待审核状态 |
+| `DELETE /api/people/:id` | 删除词条或提交删除申请，行为由审核开关决定 |
+| `GET/POST /api/messages` | 读取或提交留言；留言审核开启时，新留言不会立即公开 |
+| `GET /api/settings` | 返回公开的审核开关状态，供页面提示使用 |
+| `GET/POST /api/admin/settings` | 读取或调整审核开关 |
+| `GET /api/admin/all` | 读取管理台词条、留言、申请和待处理数量 |
+| `/api/admin/people-review`, `/api/admin/delete-review` | 审核新增词条和删除申请 |
+| 其他 `/api/admin/*` | 管理员直接新增、下架、恢复、删除或导出数据 |
+
+所有 `/api/admin/*` 请求都需要管理口令。修改 API 时，沿调用链同时核对 `js/people.js`、`server.js` 和 `admin.html`；修改审核流程时，要同时检查 `peopleModerated` 与 `messagesModerated` 两个独立开关。
+
+## 日常开发流程
+
+1. 运行 `./start.sh` 或 `start.bat`，打开 <http://127.0.0.1:8080/>。
+2. 按上面的目录表改 HTML、CSS、前端脚本或后端；静态页面改完直接刷新，Node 服务改完重启。
+3. 运行下方核对命令，再检查改动页面。改了动态功能时，也检查人物册、留言板和管理页；改了审核流程时，分别验证开关关闭和开启后的提交、审核结果。
+4. 看 `git status`，确认没有把 `data/`、`config.json`、备份或临时文件加入提交。
+
+如果页面内容能直接打开，但人物册或留言板提示无法连接，请确认使用 `http://127.0.0.1:8080/` 而不是 `file://` 打开，并查看启动终端是否有错误。
 
 ## 数据与备份
 
