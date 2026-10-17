@@ -12,4 +12,6 @@ node_modules/
 *.zip
 *.bak
 *.bak-*
-Screenshot_*.jpg
+
+# 运行时资源不要排除：index.html 引用了 Screenshot_*.jpg 和 nanchenglu-*.m4a。
+# 镜像里缺这些文件 → 页面图片空着、音频播放器加载失败（线上已经踩过一次）。
