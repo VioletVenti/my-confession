@@ -28,12 +28,12 @@ docker compose up -d --build
 | 栏目 | 页面 |
 |---|---|
 | 首页与搜索 | `index.html` |
-| 班规 | `rules-daily.html`、`rules-face.html`、`rules-study.html`、`rules-punish.html`、`rules-misc.html` |
-| 往事 | `youth-fun.html`、`youth-combo.html`、`youth-end.html`、`youth-epilogue.html`、`youth-credits.html` |
-| 轶闻 | `anec-legend.html`、`anec-clumsy.html`、`anec-wisdom.html`、`anec-custom.html`、`anec-lucky.html` |
-| 人物册 | `people-normal.html`、`people-half.html`、`people-full.html`、`people-god.html`、`people-xx.html` |
-| 岁月史书 | `suishu.html` |
-| 其他 | `about.html`、`contact.html`、`help.html`、`copyright.html` |
+| 班规 | `pages/rules/` |
+| 往事 | `pages/memories/` |
+| 轶闻 | `pages/anecdotes/` |
+| 人物册 | `pages/people/` |
+| 岁月史书 | `pages/memories/suishu.html` |
+| 其他 | `pages/info/` |
 
 ## 维护文档
 

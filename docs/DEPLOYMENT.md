@@ -67,7 +67,7 @@ docker compose start my-confession
 docker compose logs -f my-confession
 ```
 
-第 3 步的 `config.json` **一定不能漏**——那是这台机器自己的管理员口令（`adminToken`），不带的话容器会生成新的，你会进不去 `/admin.html`。
+第 3 步的 `config.json` **一定不能漏**——那是这台机器自己的管理员口令（`adminToken`），不带的话容器会生成新的，你会进不去 `/pages/admin.html`。
 
 迁移完成后，根目录的 `data/` 和 `config.json` 就不再被容器使用（容器只认卷），可以留着当备份，别急着删。
 
@@ -149,7 +149,7 @@ systemctl status confession
 - [ ] 管理口令足够强，并且你知道它存在哪（`config.json` / Docker 卷内 `/app/data/config.json`）
 - [ ] `config.json`、`data/`、`server.js` 无法通过网址下载（`server.js` 已内置拦截，实测 404）
 - [ ] 走 HTTPS，否则留言和提交内容是明文传输
-- [ ] 想开审核：打开 `/admin.html`，在里面切换「词条审核 / 留言审核」，改完即时生效，不用重启
+- [ ] 想开审核：打开 `/pages/admin.html`，在里面切换「词条审核 / 留言审核」，改完即时生效，不用重启
 - [ ] 限制 NAS 管理界面、备份目录和 Docker 卷的访问权限
 
 ## Windows 开机自启与定时备份

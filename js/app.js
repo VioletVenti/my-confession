@@ -14,6 +14,12 @@
         panel.className = 'search-results';
         box.appendChild(panel);
 
+        function projectPageUrl(path) {
+            var marker = location.pathname.indexOf('/pages/');
+            var depth = marker === -1 ? 0 : location.pathname.slice(marker + 1).split('/').filter(Boolean).length - 1;
+            return '../'.repeat(Math.max(0, depth)) + path;
+        }
+
         var data = (typeof window.SEARCH_INDEX !== 'undefined') ? window.SEARCH_INDEX : [];
         var hits = [];
         var active = -1;
@@ -53,7 +59,7 @@
             }
 
             var rows = hits.slice(0, 60).map(function (it, i) {
-                return '<a class="search-result' + (i === active ? ' active' : '') + '" href="' + it.p + '#' + it.a + '" data-i="' + i + '">' +
+                return '<a class="search-result' + (i === active ? ' active' : '') + '" href="' + projectPageUrl(it.p) + '#' + it.a + '" data-i="' + i + '">' +
                     '<div class="sr-head"><span class="sr-topic">' + esc(it.t) + '</span>' +
                     '<span class="sr-page">' + esc(it.d) + '</span></div>' +
                     '<div class="sr-snip">' + snip(it.x, q) + '</div></a>';
@@ -71,7 +77,7 @@
 
         function go(i) {
             if (i < 0 || i >= hits.length) { return; }
-            location.href = hits[i].p + '#' + hits[i].a;
+            location.href = projectPageUrl(hits[i].p) + '#' + hits[i].a;
         }
 
         // 输入即搜（只出列表，不跳转）

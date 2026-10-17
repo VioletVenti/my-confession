@@ -221,6 +221,36 @@ const MIME = {
 };
 const DENY = [/^\/data\//i, /^\/config\.json$/i, /^\/server\.js$/i, /^\/\./];
 
+const LEGACY_PAGE_REDIRECTS = {
+  '/about.html': '/pages/info/about.html',
+  '/admin.html': '/pages/admin.html',
+  '/anec-clumsy.html': '/pages/anecdotes/anec-clumsy.html',
+  '/anec-custom.html': '/pages/anecdotes/anec-custom.html',
+  '/anec-legend.html': '/pages/anecdotes/anec-legend.html',
+  '/anec-lucky.html': '/pages/anecdotes/anec-lucky.html',
+  '/anec-wisdom.html': '/pages/anecdotes/anec-wisdom.html',
+  '/contact.html': '/pages/info/contact.html',
+  '/copyright.html': '/pages/info/copyright.html',
+  '/help.html': '/pages/info/help.html',
+  '/people-full.html': '/pages/people/people-full.html',
+  '/people-god.html': '/pages/people/people-god.html',
+  '/people-half.html': '/pages/people/people-half.html',
+  '/people-normal.html': '/pages/people/people-normal.html',
+  '/people-xx.html': '/pages/people/people-xx.html',
+  '/rules-daily.html': '/pages/rules/rules-daily.html',
+  '/rules-face.html': '/pages/rules/rules-face.html',
+  '/rules-misc.html': '/pages/rules/rules-misc.html',
+  '/rules-punish.html': '/pages/rules/rules-punish.html',
+  '/rules-study.html': '/pages/rules/rules-study.html',
+  '/suishu.html': '/pages/memories/suishu.html',
+  '/x-tutu.html': '/pages/anecdotes/x-tutu.html',
+  '/youth-combo.html': '/pages/memories/youth-combo.html',
+  '/youth-credits.html': '/pages/memories/youth-credits.html',
+  '/youth-end.html': '/pages/memories/youth-end.html',
+  '/youth-epilogue.html': '/pages/memories/youth-epilogue.html',
+  '/youth-fun.html': '/pages/memories/youth-fun.html'
+};
+
 function serveStatic(req, res, pathname) {
   let rel = decodeURIComponent(pathname);
   if (rel === '/') rel = '/index.html';
@@ -469,6 +499,12 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  const legacyPage = LEGACY_PAGE_REDIRECTS[pathname];
+  if (legacyPage) {
+    res.writeHead(301, { Location: legacyPage + new URL(req.url, 'http://x').search, 'Cache-Control': 'public, max-age=86400' });
+    res.end();
+    return;
+  }
   serveStatic(req, res, pathname);
 });
 
@@ -477,7 +513,7 @@ server.listen(PORT, HOST, () => {
   console.log('');
   console.log('  My Confession 已启动（SQLite）');
   console.log('  站点   : http://' + shown + ':' + PORT + '/');
-  console.log('  审核台 : http://' + shown + ':' + PORT + '/admin.html');
+  console.log('  审核台 : http://' + shown + ':' + PORT + '/pages/admin.html');
   console.log('  口令   : ' + CONFIG.adminToken);
   console.log('  词条审核 : ' + (CONFIG.peopleModerated ? '开' : '关') +
               '   留言审核 : ' + (CONFIG.messagesModerated ? '开' : '关'));

@@ -19,13 +19,19 @@ node --check backup.js
 ## 目录与职责
 
 ```text
-*.html                 页面和内容，暂留在仓库根目录以保持 URL
+index.html             首页入口
+1.5.html               旧首页兼容入口
 css/style.css          全站样式与响应式布局
 js/app.js              页面搜索和标签筛选
 js/search-data.js      静态搜索索引
 js/people.js           人物册和留言板的 API 客户端
 server.js              静态文件服务、API、管理接口和 SQLite 初始化
-admin.html             管理审核页面
+pages/rules/           班规内容页
+pages/people/          人物册页面
+pages/anecdotes/       轶闻页面
+pages/memories/        往事与《岁月史书》
+pages/info/            关于、联系、帮助和版权页面
+pages/admin.html       管理审核页面
 backup.js              SQLite 一致性备份
 docs/                  开发和部署指南
 docs/releases/         按版本归档的一次性更新说明
@@ -38,9 +44,11 @@ data/app.db            运行时数据库（自动生成，不提交）
 config.json            管理口令等运行配置（自动生成，不提交）
 ```
 
-### 为什么页面仍在根目录
+### 页面目录与 URL 兼容
 
-页面之间用相对路径互相链接，服务按请求路径直接从项目根目录查找文件，页面也能通过 `file://` 独立打开。把页面或站点资源搬进新目录会同时改变站内链接、书签和旧 URL。为了让日常编辑简单可靠，页面、`css/`、`js/` 和首页正在引用的录音/图片先保持原路径；维护文档统一放在 `docs/`。
+首页 `index.html` 和旧版入口 `1.5.html` 留在根目录；正文页面按栏目存放在 `pages/` 下。页面间使用相对链接，共用的 CSS、JavaScript 和首页素材继续留在原位置。`server.js` 会把原先的根级页面 URL（例如 `/rules-study.html`）永久跳转到新地址；新代码和书签应使用 `pages/` 下的路径。
+
+直接用 `file://` 打开首页时，页面链接和搜索仍使用相对路径，不需要启动构建工具。新增页面时放入对应栏目目录，使用 `../` 或 `../../` 指向共用资源，并同步更新首页目录、其他页面导航以及 `js/search-data.js` 中的页面路径。
 
 ## 修改页面和内容
 
@@ -52,7 +60,7 @@ config.json            管理口令等运行配置（自动生成，不提交）
 
 首页的录音和图片用根目录相对路径引用。替换这些素材时沿用当前文件名，或同步修改 `index.html` 中对应的 `src`，并确认新文件确实进入 Git。
 
-人物册和留言板是动态功能：前端交互在 `js/people.js`，服务端校验、管理权限和数据持久化在 `server.js`。服务端使用 Node 内置 `node:http` 和 `node:sqlite`，数据库文件在 `data/app.db`。新增或调整数据字段时，同时检查 API 输入校验、管理页面展示以及现有数据库的兼容性。
+人物册和留言板是动态功能：前端交互在 `js/people.js`，服务端校验、管理权限和数据持久化在 `server.js`。服务端使用 Node 内置 `node:http` 和 `node:sqlite`，数据库文件在 `data/app.db`。新增或调整数据字段时，同时检查 API 输入校验、`pages/admin.html` 展示以及现有数据库的兼容性。
 
 常用 API：
 
@@ -67,7 +75,7 @@ config.json            管理口令等运行配置（自动生成，不提交）
 | `/api/admin/people-review`, `/api/admin/delete-review` | 审核新增词条和删除申请 |
 | 其他 `/api/admin/*` | 管理员直接新增、下架、恢复、删除或导出数据 |
 
-所有 `/api/admin/*` 请求都需要管理口令。修改 API 时，沿调用链同时核对 `js/people.js`、`server.js` 和 `admin.html`；修改审核流程时，要同时检查 `peopleModerated` 与 `messagesModerated` 两个独立开关。
+所有 `/api/admin/*` 请求都需要管理口令。修改 API 时，沿调用链同时核对 `js/people.js`、`server.js` 和 `pages/admin.html`；修改审核流程时，要同时检查 `peopleModerated` 与 `messagesModerated` 两个独立开关。
 
 ## 日常开发流程
 
