@@ -1,0 +1,28 @@
+# ---- 运行时生成 / 私密 ----
+config.json
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/backup/
+
+# ---- 素材与留档（体积大，不需要进仓库）----
+剩余文本/
+人物册/
+历史记录/
+班规/
+*.zip
+*.m4a
+*.mp3
+*.docx
+Screenshot_*.jpg
+
+# ---- 备份与旧版 ----
+*.bak
+*.bak-*
+*单页锚点版.html
+
+# ---- 系统垃圾 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+node_modules/
