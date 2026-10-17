@@ -62,7 +62,10 @@
                 del.addEventListener('click', function () {
                     if (!confirm('确定删除「' + it.name + '」这一条？')) { return; }
                     api('/api/people/' + it.id, { method: 'DELETE' }).then(function (r) {
-                        if (r.body && r.body.ok) { load(); }
+                        if (r.body && r.body.ok) {
+                            if (r.body.pending) { alert(r.body.message || '删除申请已提交，等管理员批准'); }
+                            load();
+                        }
                         else { alert((r.body && r.body.error) || '删除失败'); }
                     }).catch(function () { alert('删除失败：连不上服务'); });
                 });
@@ -100,7 +103,12 @@
                     btn.disabled = false;
                     if (r.body && r.body.ok) {
                         form.reset();
-                        if (tip) { tip.textContent = '已添加「' + name + '」'; tip.className = 'people-tip ok'; }
+                        if (tip) {
+                            tip.textContent = r.body.pending
+                                ? (r.body.message || '已提交，等待管理员审核')
+                                : '已添加「' + name + '」';
+                            tip.className = 'people-tip ok';
+                        }
                         load();
                     } else {
                         if (tip) { tip.textContent = (r.body && r.body.error) || '添加失败'; tip.className = 'people-tip err'; }
@@ -164,7 +172,12 @@
                     btn.disabled = false;
                     if (r.body && r.body.ok) {
                         form.reset();
-                        if (tip) { tip.textContent = '已发送'; tip.className = 'people-tip ok'; }
+                        if (tip) {
+                            tip.textContent = r.body.pending
+                                ? (r.body.message || '已提交，等待管理员审核')
+                                : '已发送';
+                            tip.className = 'people-tip ok';
+                        }
                         load();
                     } else {
                         if (tip) { tip.textContent = (r.body && r.body.error) || '发送失败'; tip.className = 'people-tip err'; }

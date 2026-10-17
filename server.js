@@ -4,9 +4,19 @@
  *
  * 权限模型
  *   · 静态文件（正文 / 岁月史书 / 鸣谢栏 …）永远只读，任何人都改不到
- *   · 访客可写：人物册「自由添加 + 自由删减」、留言板「自由发言」
- *   · 删除是软删除（status='deleted'），数据不会真没，管理口令可恢复
- *   · 管理口令：config.json 的 adminToken —— 可恢复/彻底清除/导出静态快照
+ *   · 访客可写：人物册、留言板
+ *   · 两个独立的审核开关（config.json）：
+ *       peopleModerated  → 人物册的任何操作（新增 / 删除）都变成「请求」，进后台等你审批
+ *       messagesModerated → 留言需审核后才上架
+ *   · 删除一律软删除（status 变化），数据不会真没，管理口令可恢复
+ *   · 管理口令：config.json 的 adminToken
+ *
+ * 人物状态机
+ *   published  在线
+ *   pending    访客新增，待审批
+ *   hidden     管理员下架（可恢复）
+ *   rejected   审批驳回
+ *   deleted    已删除（可恢复）
  */
 'use strict';
 
@@ -33,10 +43,22 @@ function loadConfig() {
   let dirty = false;
   if (!cfg.adminToken) { cfg.adminToken = crypto.randomBytes(18).toString('hex'); dirty = true; }
   if (typeof cfg.messagesModerated !== 'boolean') { cfg.messagesModerated = false; dirty = true; }
+  if (typeof cfg.peopleModerated !== 'boolean') { cfg.peopleModerated = false; dirty = true; }
   if (dirty) fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
   return cfg;
 }
 const CONFIG = loadConfig();
+
+function saveConfig() {
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(CONFIG, null, 2), 'utf8');
+}
+
+function publicSettings() {
+  return {
+    peopleModerated: CONFIG.peopleModerated,
+    messagesModerated: CONFIG.messagesModerated,
+  };
+}
 
 // ---------------------------------------------------------------- 数据库
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -66,6 +88,19 @@ db.exec(`
     from_hash  TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_messages ON messages(status, created_at DESC);
+
+  -- 删除申请：审核开启时，访客删词条不再直接生效，而是写一条请求等审批
+  CREATE TABLE IF NOT EXISTS people_requests (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT    NOT NULL DEFAULT 'delete',
+    target_id   INTEGER NOT NULL,
+    reason      TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'pending',
+    created_at  INTEGER NOT NULL,
+    decided_at  INTEGER,
+    from_hash   TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_requests ON people_requests(status, created_at DESC);
 `);
 
 const q = {
@@ -74,11 +109,16 @@ const q = {
      WHERE status='published' ORDER BY category, id`),
   insert: db.prepare(
     `INSERT INTO people (name,category,note,status,created_at,from_hash)
-     VALUES (?,?,?,'published',?,?)`),
+     VALUES (?,?,?,?,?,?)`),
   softDelete: db.prepare(`UPDATE people SET status='deleted', updated_at=? WHERE id=? AND status='published'`),
+  setStatus: db.prepare(`UPDATE people SET status=?, updated_at=? WHERE id=?`),
   restore: db.prepare(`UPDATE people SET status='published', updated_at=? WHERE id=?`),
   purge: db.prepare(`DELETE FROM people WHERE id=?`),
+  getPerson: db.prepare(`SELECT id,name,category,note,status,created_at FROM people WHERE id=?`),
   allPeople: db.prepare(`SELECT id,name,category,note,status,created_at FROM people ORDER BY id DESC`),
+  pendingPeople: db.prepare(
+    `SELECT id,name,category,note,status,created_at FROM people
+     WHERE status='pending' ORDER BY id ASC`),
 
   listMsgs: db.prepare(
     `SELECT id,name,text,created_at FROM messages
@@ -89,8 +129,31 @@ const q = {
   purgeMsg: db.prepare(`DELETE FROM messages WHERE id=?`),
   allMsgs: db.prepare(`SELECT id,name,text,status,created_at FROM messages ORDER BY id DESC LIMIT 500`),
 
+  addRequest: db.prepare(
+    `INSERT INTO people_requests (kind,target_id,reason,status,created_at,from_hash)
+     VALUES (?,?,?,'pending',?,?)`),
+  // 同一个人同一条重复申请只留一条
+  findRequest: db.prepare(
+    `SELECT id FROM people_requests
+     WHERE kind='delete' AND target_id=? AND status='pending' LIMIT 1`),
+  listRequests: db.prepare(
+    `SELECT r.id, r.kind, r.target_id, r.reason, r.status, r.created_at,
+            p.name AS target_name, p.category AS target_category
+     FROM people_requests r LEFT JOIN people p ON p.id = r.target_id
+     ORDER BY r.status='pending' DESC, r.id DESC LIMIT 300`),
+  pendingRequests: db.prepare(
+    `SELECT r.id, r.kind, r.target_id, r.reason, r.status, r.created_at,
+            p.name AS target_name, p.category AS target_category
+     FROM people_requests r LEFT JOIN people p ON p.id = r.target_id
+     WHERE r.status='pending' ORDER BY r.id ASC`),
+  getRequest: db.prepare(`SELECT * FROM people_requests WHERE id=?`),
+  decideRequest: db.prepare(
+    `UPDATE people_requests SET status=?, decided_at=? WHERE id=? AND status='pending'`),
+
   countPeople: db.prepare(`SELECT COUNT(*) c FROM people WHERE status='published'`),
   countMsgs: db.prepare(`SELECT COUNT(*) c FROM messages WHERE status='published'`),
+  countPendingPeople: db.prepare(`SELECT COUNT(*) c FROM people WHERE status='pending'`),
+  countPendingRequests: db.prepare(`SELECT COUNT(*) c FROM people_requests WHERE status='pending'`),
 };
 
 // ---------------------------------------------------------------- 工具
@@ -179,6 +242,7 @@ async function api(req, res, pathname) {
   const m = req.method;
   const h = clientHash(req);
 
+  // ---- 公开：人物册
   if (pathname === '/api/people' && m === 'GET') {
     return send(res, 200, { ok: true, items: q.listPublished.all() });
   }
@@ -194,19 +258,52 @@ async function api(req, res, pathname) {
     if (!note) return send(res, 400, { ok: false, error: '内容不能空' });
     if (!CATEGORIES.includes(category)) return send(res, 400, { ok: false, error: '分类不合法' });
     const now = Date.now();
-    const r = q.insert.run(name, category, note, now, h);
-    return send(res, 200, { ok: true, item: { id: Number(r.lastInsertRowid), name, category, note, created_at: now } });
+    const moderated = CONFIG.peopleModerated;
+    const status = moderated ? 'pending' : 'published';
+    const r = q.insert.run(name, category, note, status, now, h);
+    if (moderated) {
+      return send(res, 202, {
+        ok: true, pending: true,
+        message: '已提交，等管理员审核通过后才会出现在人物册里',
+        item: { id: Number(r.lastInsertRowid), name, category, note, status, created_at: now },
+      });
+    }
+    return send(res, 200, {
+      ok: true, pending: false,
+      item: { id: Number(r.lastInsertRowid), name, category, note, status, created_at: now },
+    });
   }
 
   const mm = pathname.match(/^\/api\/people\/(\d+)$/);
   if (mm && m === 'DELETE') {
     const limited = rateLimit('d' + h, 3000, 200);
     if (limited) return send(res, 429, { ok: false, error: limited });
-    const r = q.softDelete.run(Date.now(), Number(mm[1]));
+    const id = Number(mm[1]);
+    const row = q.getPerson.get(id);
+    if (!row || row.status !== 'published') {
+      return send(res, 404, { ok: false, error: '没有这条（可能已被删）' });
+    }
+    if (CONFIG.peopleModerated) {
+      // 审核开启：不直接删，落一条删除申请
+      const dup = q.findRequest.get(id);
+      if (dup) {
+        return send(res, 202, {
+          ok: true, pending: true, message: '这条已经提交过删除申请了，等管理员处理', requestId: Number(dup.id),
+        });
+      }
+      const r = q.addRequest.run('delete', id, clip(req.headers['x-reason'] || '', 200), Date.now(), h);
+      return send(res, 202, {
+        ok: true, pending: true,
+        message: '删除申请已提交，等管理员批准后才真正下架',
+        requestId: Number(r.lastInsertRowid),
+      });
+    }
+    const r = q.softDelete.run(Date.now(), id);
     if (!r.changes) return send(res, 404, { ok: false, error: '没有这条（可能已被删）' });
-    return send(res, 200, { ok: true });
+    return send(res, 200, { ok: true, pending: false });
   }
 
+  // ---- 公开：留言板
   if (pathname === '/api/messages' && m === 'GET') {
     return send(res, 200, { ok: true, items: q.listMsgs.all() });
   }
@@ -218,43 +315,144 @@ async function api(req, res, pathname) {
     const name = clip(b.name, 20) || '匿名';
     const text = clip(b.text, 500);
     if (!text) return send(res, 400, { ok: false, error: '内容不能空' });
-    const status = CONFIG.messagesModerated ? 'pending' : 'published';
+    const moderated = CONFIG.messagesModerated;
+    const status = moderated ? 'pending' : 'published';
     const now = Date.now();
     const r = q.insertMsg.run(name, text, status, now, h);
-    return send(res, 200, { ok: true, item: { id: Number(r.lastInsertRowid), name, text, created_at: now } });
+    return send(res, 200, {
+      ok: true, pending: moderated,
+      message: moderated ? '已提交，等管理员审核后才会显示' : '',
+      item: { id: Number(r.lastInsertRowid), name, text, created_at: now },
+    });
   }
 
+  // ---- 公开：当前开关状态（前端用来决定提示文案）
+  if (pathname === '/api/settings' && m === 'GET') {
+    return send(res, 200, { ok: true, settings: publicSettings() });
+  }
+
+  // ---- 后台
   if (pathname.startsWith('/api/admin/')) {
     if (!isAdmin(req)) return send(res, 401, { ok: false, error: '管理口令不正确' });
+
+    if (pathname === '/api/admin/settings' && m === 'GET') {
+      return send(res, 200, { ok: true, settings: publicSettings() });
+    }
+
+    if (pathname === '/api/admin/settings' && m === 'POST') {
+      const b = await readBody(req);
+      const changed = [];
+      if (typeof b.peopleModerated === 'boolean' && b.peopleModerated !== CONFIG.peopleModerated) {
+        CONFIG.peopleModerated = b.peopleModerated; changed.push('peopleModerated');
+      }
+      if (typeof b.messagesModerated === 'boolean' && b.messagesModerated !== CONFIG.messagesModerated) {
+        CONFIG.messagesModerated = b.messagesModerated; changed.push('messagesModerated');
+      }
+      if (changed.length) saveConfig();
+      return send(res, 200, { ok: true, settings: publicSettings(), changed });
+    }
 
     if (pathname === '/api/admin/all' && m === 'GET') {
       return send(res, 200, {
         ok: true,
         people: q.allPeople.all(),
         messages: q.allMsgs.all(),
-        stats: { people: q.countPeople.get().c, messages: q.countMsgs.get().c },
+        requests: q.listRequests.all(),
+        settings: publicSettings(),
+        stats: {
+          people: q.countPeople.get().c,
+          messages: q.countMsgs.get().c,
+          pendingPeople: q.countPendingPeople.get().c,
+          pendingRequests: q.countPendingRequests.get().c,
+        },
       });
     }
+
+    // 管理员直接加词条（跳过审核）
+    if (pathname === '/api/admin/people' && m === 'POST') {
+      const b = await readBody(req);
+      const name = clip(b.name, 40);
+      const note = clip(b.note, 1200);
+      const category = clip(b.category, 10);
+      if (!name) return send(res, 400, { ok: false, error: '名字不能空' });
+      if (!note) return send(res, 400, { ok: false, error: '内容不能空' });
+      if (!CATEGORIES.includes(category)) return send(res, 400, { ok: false, error: '分类不合法' });
+      const now = Date.now();
+      const r = q.insert.run(name, category, note, 'published', now, 'admin');
+      return send(res, 200, {
+        ok: true,
+        item: { id: Number(r.lastInsertRowid), name, category, note, status: 'published', created_at: now },
+      });
+    }
+
+    // 审批「访客新增」：approve / reject
+    if (pathname === '/api/admin/people-review' && m === 'POST') {
+      const b = await readBody(req);
+      const id = Number(b.id);
+      const action = String(b.action || '');
+      const row = q.getPerson.get(id);
+      if (!row) return send(res, 404, { ok: false, error: '没有这条' });
+      if (row.status !== 'pending') return send(res, 409, { ok: false, error: '这条不在待审核状态' });
+      if (action === 'approve') { q.setStatus.run('published', Date.now(), id); return send(res, 200, { ok: true }); }
+      if (action === 'reject') { q.setStatus.run('rejected', Date.now(), id); return send(res, 200, { ok: true }); }
+      return send(res, 400, { ok: false, error: 'action 只能是 approve / reject' });
+    }
+
+    // 下架（published → hidden），可恢复
+    if (pathname === '/api/admin/people-hide' && m === 'POST') {
+      const b = await readBody(req);
+      const id = Number(b.id);
+      const row = q.getPerson.get(id);
+      if (!row) return send(res, 404, { ok: false, error: '没有这条' });
+      q.setStatus.run('hidden', Date.now(), id);
+      return send(res, 200, { ok: true });
+    }
+
+    // 审批「删除申请」：approve / reject
+    if (pathname === '/api/admin/delete-review' && m === 'POST') {
+      const b = await readBody(req);
+      const id = Number(b.id);
+      const action = String(b.action || '');
+      const reqRow = q.getRequest.get(id);
+      if (!reqRow) return send(res, 404, { ok: false, error: '没有这条申请' });
+      if (reqRow.status !== 'pending') return send(res, 409, { ok: false, error: '这条申请已处理过' });
+      const now = Date.now();
+      if (action === 'approve') {
+        q.setStatus.run('deleted', now, Number(reqRow.target_id));
+        q.decideRequest.run('approved', now, id);
+        return send(res, 200, { ok: true });
+      }
+      if (action === 'reject') {
+        q.decideRequest.run('rejected', now, id);
+        return send(res, 200, { ok: true });
+      }
+      return send(res, 400, { ok: false, error: 'action 只能是 approve / reject' });
+    }
+
     if (pathname === '/api/admin/restore' && m === 'POST') {
       const { id } = await readBody(req);
       q.restore.run(Date.now(), Number(id));
       return send(res, 200, { ok: true });
     }
+
     if (pathname === '/api/admin/purge' && m === 'POST') {
       const { id, type } = await readBody(req);
       if (type === 'message') q.purgeMsg.run(Number(id)); else q.purge.run(Number(id));
       return send(res, 200, { ok: true });
     }
+
     if (pathname === '/api/admin/message-delete' && m === 'POST') {
       const { id } = await readBody(req);
       q.delMsg.run(Number(id));
       return send(res, 200, { ok: true });
     }
+
     if (pathname === '/api/admin/snapshot' && m === 'POST') {
       const out = { exportedAt: new Date().toISOString(), people: q.listPublished.all() };
       fs.writeFileSync(path.join(DATA_DIR, 'people.json'), JSON.stringify(out, null, 2), 'utf8');
       return send(res, 200, { ok: true, path: 'data/people.json', count: out.people.length });
     }
+
     return send(res, 404, { ok: false, error: 'no such admin route' });
   }
 
@@ -281,6 +479,8 @@ server.listen(PORT, HOST, () => {
   console.log('  站点   : http://' + shown + ':' + PORT + '/');
   console.log('  审核台 : http://' + shown + ':' + PORT + '/admin.html');
   console.log('  口令   : ' + CONFIG.adminToken);
+  console.log('  词条审核 : ' + (CONFIG.peopleModerated ? '开' : '关') +
+              '   留言审核 : ' + (CONFIG.messagesModerated ? '开' : '关'));
   console.log('  数据库 : data/app.db');
   console.log('');
 });
