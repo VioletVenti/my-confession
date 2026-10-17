@@ -49,7 +49,6 @@ New-NetFirewallRule -DisplayName "My Confession 8080" -Direction Inbound -Protoc
 | **轶闻** | `anec-legend.html` 俗世奇人 · `anec-clumsy.html` 弄巧成拙 · `anec-wisdom.html` 集体智慧 · `anec-custom.html` 约定俗成 · `anec-lucky.html` 妙手偶得 | 那些人身上的段子 |
 | **人物册** | `people-normal.html` 正常人 · `people-half.html` 半唐 · `people-full.html` 全唐 · `people-god.html` 神人 · `people-xx.html` \*\* | 分档名录，**访客可以自己往里加** |
 | **岁月史书** | `suishu.html` | 185 条语录合集 |
-| **兔兔** | `x-tutu.html` | 只能从搜索结果点进去 |
 | **其他** | `about.html` · `contact.html` · `help.html` · `copyright.html` | 关于、联系方式、帮助、版权 |
 
 改版前的老页面留在 `1.5.html`（自动跳转到新版）、`1.5-单页锚点版.html` 和 `历史记录/`。
